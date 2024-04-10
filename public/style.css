@@ -1,0 +1,28 @@
+body {
+    text-align: center;
+}
+
+#area_roomList {
+    width: 300px;
+    height: 150px;
+    overflow: auto;
+    border: 1px solid #999999;
+    padding: 5px;
+    box-sizing: border-box;
+}
+
+#gamePage_room main {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+#area_playerInRoomList {
+    width: 33%;
+    height: 150px;
+    overflow: auto;
+    border: 1px solid #999999;
+    padding: 5px;
+    box-sizing: border-box;
+    text-align: left;
+}

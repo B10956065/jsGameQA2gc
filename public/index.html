@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Game</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="gamePage_login">
+        <h1>Game title here</h1>
+        <h3>Login</h3>
+        <form id="form">
+            <label for="input_nickname">Your nickname</label>
+            <input type="text" id="input_nickname" required>
+            <button type="submit">Send</button>
+        </form>
+    </div>
+
+    <div id="gamePage_lobby" style="display: none">
+        <h1>Game title here</h1>
+        <h3>Main</h3>
+        <div id="area_playerList">
+            <ul id="playerList">player list:</ul>
+        </div>
+        <div>
+            <label for="input_roomNumber">Room number</label>
+            <input type="text" id="input_roomNumber">
+            <button id="button_join">Join</button>
+            <br><br>
+            <label for="createNewRoomIsPublic_false">Private</label>
+            <input type="radio" name="createNewRoomIsPublic" id="createNewRoomIsPublic_false" value="0">
+            <label for="createNewRoomIsPublic_true">Public</label>
+            <input type="radio" name="createNewRoomIsPublic" id="createNewRoomIsPublic_true" value="1" checked="checked">
+            <button id="button_create">Create new room</button>
+        </div>
+        <div id="area_roomList">
+
+        </div>
+    </div>
+
+    <div id="gamePage_room" style="display: none">
+        <header>
+            <h1>Game title here</h1>
+            <h3>Lobby</h3>
+            <div>
+                <label for="label_roomRoomNumber">room number:</label>
+                <label id="label_roomRoomNumber"></label>
+                <br><br>
+                <label for="label_roomRoomKeeper">room keeper:</label>
+                <label id="label_roomRoomKeeper"></label>
+            </div>
+        </header>
+        <main>
+            <div id="area_playerInRoomList"></div>
+            <div>
+                <button type="button" id="button_roomStartGame" disabled>Start</button>
+                <button type="button" id="button_roomLeaveRoom">Leave</button>
+            </div>
+        </main>
+    </div>
+    <div id="gamePage_game" style="display: none">
+        <h1>Game title here</h1>
+        <header>
+            <div>
+                <p>room number: ${roomId}</p>
+            </div>
+        </header>
+        <main>
+            <div>
+                <label id="label_game_time">${time}</label>
+            </div>
+            <div>
+                <p id="label_game_flag">${flag}</p>
+                <p id="label_game_questions">${questions}</p>
+            </div>
+            <div id="div_game_fourSelectionButtonParent">
+                <button type="button" id="button_game_selection_1" value="1">${select_1}</button>
+                <button type="button" id="button_game_selection_2" value="2">${select_2}</button>
+                <button type="button" id="button_game_selection_3" value="3">${select_3}</button>
+                <button type="button" id="button_game_selection_4" value="4">${select_4}</button>
+            </div>
+            <div id="area_gamePlayerScoreList"></div>
+        </main>
+    </div>
+
+    <script>
+        const socket = io();
+        const playerList = document.getElementById('playerList');
+
+        document.addEventListener("DOMContentLoaded", function() {
+            const form = document.getElementById('form');
+            const messageInput = document.getElementById('input_nickname');
+
+            // AREA LOGIN
+            // sent login request to server
+            form.addEventListener('submit', function(e) {
+                e.preventDefault();
+                const nickname = messageInput.value;
+                socket.emit('loginAttempt', nickname);
+                messageInput.value = '';
+                return false;
+            });
+
+            // get response of login from server
+            socket.on('loginResponse', function(isSuccess) {
+                if (isSuccess) {
+                    // toggle page
+                    document.getElementById('gamePage_login').style.display = 'none';
+                    document.getElementById('gamePage_lobby').style.display = 'block';
+
+                    // request player list from server
+                    socket.emit('playerListRequest');
+                    // request room list from server
+                    socket.emit('roomListRequest');
+                } else {
+                    alert('Login failed');
+                }
+            });
+
+            // AREA LOBBY-PLAYER
+            // get response of player list from server
+            socket.on('playerListResponse', function(players) {
+                console.log(document.getElementById('playerList')); // This should not be null
+                playerList.innerHTML = '';
+                players.forEach(player => {
+                    let li = document.createElement('li');
+                    li.textContent = player;
+                    playerList.appendChild(li);
+                });
+            });
+
+            socket.on('newPlayerLogin', function(player) {
+                let li = document.createElement('li')
+                li.textContent = player;
+                playerList.appendChild(li);
+            });
+
+            socket.on('playerDisconnected', function (player) {
+                let items = playerList.querySelectorAll('li');
+                items.forEach(function(item) {
+                    if (item.textContent === player) {
+                        playerList.removeChild(item);
+                    }
+                });
+            });
+
+            // AREA LOBBY-ROOM
+            function area_roomList_lineAdd(roomData) {
+                let newLine = document.createElement('p');
+                newLine.textContent = `room NO.${roomData.roomId} by ${roomData.roomKeeper}`;
+                newLine.id = `room_${roomData.roomId}`
+                area_roomList.appendChild(newLine);
+            }
+            function area_roomList_lineRemove(roomNumber) {
+                const children = area_roomList.children
+                for (let i = 0; i<children.length; i++) {
+                    if (children[i].id === `room_${roomNumber}`) {
+                        area_roomList.removeChild(children[i]);
+                    }
+                }
+            }
+
+            const area_roomList = document.getElementById('area_roomList');
+
+            // click button to join room
+            document.getElementById('button_join').addEventListener('click', function(e) {
+                // TODO: freeze the button to abort duplicate requests in time of waining server responses
+                const inputRoomNumber = document.getElementById('input_roomNumber');
+                const roomId = inputRoomNumber.value
+                if (!isNaN(Number(roomId)) && roomId !== '') {
+                    socket.emit('joinRoomRequestAsNormal', roomId);
+                } else if (roomId === '') {
+                    alert('Please enter room number');
+                } else {
+                    alert('illegal room number');
+                }
+
+                socket.on('joinRoomResponse', (isSuccess, describe) => {
+                    // TODO: unfreeze
+                    if (isSuccess) {
+                        console.log(`join room ${roomId}: "${describe}`);
+                        playerJoinExistedRoom(false, roomId);  // player is allowed to join the room they requested.
+                    } else {
+                        console.log(`join room ${roomId}: "${describe}`);
+                        alert(describe);
+                    }
+                })
+            });
+
+            // click button to create new room
+            document.getElementById('button_create').addEventListener('click', function(e) {
+                const createNewRoomIsPublic = Number(document.querySelector('input[name="createNewRoomIsPublic"]:checked').value);
+                socket.emit('createNewRoom', createNewRoomIsPublic);
+            });
+
+            // request list of all public room when page loaded
+            socket.on('roomListResponse', (data) => {
+                data.forEach(area_roomList_lineAdd);
+            });
+
+            // get broadcast about new room has been created, and add to list to show on screen
+            socket.on('newRoomCreated', (data) => {
+                area_roomList_lineAdd(data);
+            });
+
+            // get response from server about create new room
+            socket.on('createNewRoomResponse', (roomId) => {
+                // TODO: jump to new area: room waiting screen
+                playerJoinExistedRoom(true, roomId);
+            });
+
+            // get broadcast about remove room
+            socket.on('emptyRoomRemoved', (roomId) => {
+                area_roomList_lineRemove(roomId);
+            });
+
+            // AREA ROOM
+            const label_roomRoomNumber = document.getElementById('label_roomRoomNumber');
+            const label_roomRoomKeeper = document.getElementById('label_roomRoomKeeper');
+            const button_roomStartGame = document.getElementById('button_roomStartGame');
+
+            function becauseNewRoomKeeper() {
+                // unlock start button
+                button_roomStartGame.disabled = false;
+            }
+
+            function playerJoinExistedRoom(isRoomKeeper, roomId=null) {
+                // while player into this function, it means that the server has completed all preparations.
+                document.getElementById('gamePage_lobby').style.display = 'none';
+                document.getElementById('gamePage_room').style.display = 'block';
+
+                if (isRoomKeeper) {becauseNewRoomKeeper()}
+
+                // request data(player in room, roomKeeper) from server
+                socket.emit('fullPlayerInRoomListRequest', roomId);
+                socket.on('fullPlayerInRoomListResponse',(players,keeper) => {
+                    // player in room
+                    const area_playerInRoomList = document.getElementById('area_playerInRoomList');
+                    area_playerInRoomList.innerHTML = '';
+                    players.forEach(player => {
+                        let li = document.createElement('li');
+                        li.textContent = player;
+                        area_playerInRoomList.appendChild(li);
+                    });
+                    // room keeper
+                    label_roomRoomKeeper.textContent=keeper;
+                    // room number
+                    label_roomRoomNumber.textContent=roomId;
+                });
+            }
+
+            // new player join this room => add to screen
+            socket.on('newPlayerJoinThisRoom', (player) => {
+                const area_playerInRoomList = document.getElementById('area_playerInRoomList');
+                let li = document.createElement('li');
+                li.textContent = player;
+                area_playerInRoomList.appendChild(li);
+            });
+
+            // old player leave the room => remove from screen
+            socket.on('oldPlayerLeaveThisRoom', (player) => {
+                const area_playerInRoomList = document.getElementById('area_playerInRoomList');
+                let items = area_playerInRoomList.querySelectorAll('li');
+                items.forEach(function(item) {
+                    if (item.textContent === player) {
+                        area_playerInRoomList.removeChild(item);
+                    }
+                });
+            });
+
+            //
+            socket.on('thisRoomHaveNewKeeper', (newKeeper) => {
+                console.log(`This room has a new keeper ${newKeeper}`);
+                label_roomRoomKeeper.textContent=newKeeper;
+            });
+            socket.on('thisRoomYorAreNewKeeper', () => {
+                alert('You because new room keeper of this room');
+                becauseNewRoomKeeper();
+            });
+
+            // click button to leave room and back to lobby
+            document.getElementById('button_roomLeaveRoom').addEventListener('click', function(e) {
+                socket.emit('oldPlayerLeaveRoomRequest', Number(label_roomRoomNumber.textContent));
+                socket.on('oldPlayerLeaveRoomResponse', (isSuccess, _) => {
+                    if (isSuccess) {
+                        document.getElementById('gamePage_room').style.display = 'none';
+                        document.getElementById('gamePage_lobby').style.display = 'block';
+                    }
+                });
+            });
+
+            // click button to start game (send request)
+            button_roomStartGame.addEventListener('click', function(e) {
+                button_roomStartGame.disabled = true;
+                socket.emit('StartGamePrepare', Number(label_roomRoomNumber.textContent));
+
+                // switch screen to game page
+                document.getElementById('gamePage_room').style.display = 'none';
+                document.getElementById('gamePage_game').style.display = 'block';
+            });
+
+
+            // AREA GAME
+            const label_game_time = document.getElementById('label_game_time');
+            const label_game_flag = document.getElementById('label_game_flag');
+            const label_game_questions = document.getElementById('label_game_questions');
+            const button_game_selection_1 = document.getElementById('button_game_selection_1');
+            const button_game_selection_2 = document.getElementById('button_game_selection_2');
+            const button_game_selection_3 = document.getElementById('button_game_selection_3');
+            const button_game_selection_4 = document.getElementById('button_game_selection_4');
+            let nowFlag = 0;
+            let nowRoom = 0;
+
+            // 1st respond broadcast
+            socket.on('startGameWaitServerPreparing', () => {
+                // initialize
+                label_game_time.textContent = '10';
+                label_game_flag.textContent = 'Waiting Server Response';
+                label_game_questions.textContent = 'Incoming...';
+                nowFlag = 0; nowRoom = 0;
+            });
+
+            // Main Game (2nd)
+            socket.on('startGame', (theQuestion, roomId, flag) => {
+                console.info(theQuestion);
+                nowFlag = flag;
+                nowRoom = roomId;
+                button_game_selection_1.disabled = false;
+                button_game_selection_2.disabled = false;
+                button_game_selection_3.disabled = false;
+                button_game_selection_4.disabled = false;
+
+                button_game_selection_1.textContent = theQuestion.option1;
+                button_game_selection_2.textContent = theQuestion.option2;
+                button_game_selection_3.textContent = theQuestion.option3;
+                button_game_selection_4.textContent = theQuestion.option4;
+                label_game_flag.textContent = `Question number ${flag}：`;
+                label_game_questions.textContent = theQuestion.question;
+            });
+
+            document.getElementById('div_game_fourSelectionButtonParent').addEventListener('click', (e) => {
+                if (e.target.tagName === 'BUTTON') {
+                    const buttonValue = Number(e.target.value);
+                    console.log(`button ${buttonValue} have been clicked`);
+                    socket.emit('gameGetAnswer', buttonValue, nowRoom, nowFlag);
+                    // freeze button
+                    button_game_selection_1.disabled = true;
+                    button_game_selection_2.disabled = true;
+                    button_game_selection_3.disabled = true;
+                    button_game_selection_4.disabled = true;
+               }
+            });
+
+            // game end => settlement
+            socket.on('gameEnd', (rankingList) => {
+               console.log(rankingList);
+               const items = Object.keys(rankingList).map(key => {
+                   return [key, rankingList[key]];
+               });
+               items.sort((a, b) => {
+                   return b[1] - a[1];
+               });
+               const top = items.slice(0,3);
+               alert(`第一名：${items[0][0]} (${items[0][1]}分)`);
+            });
+        });
+    </script>
+</body>
+</html>
